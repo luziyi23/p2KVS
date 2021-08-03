@@ -1,28 +1,27 @@
-#include<unistd.h>
-#include<assert.h>
-#include<thread>
-#include<string>
-#include<iostream>
-#include<cstdio>
-#include<mutex>
-#include<atomic>
-#include<cstring>
-#include<rocksdb/slice.h>
-#include<rocksdb/db.h>
-#include<rocksdb/options.h>
-#include<rocksdb/table.h>
-#include<rocksdb/filter_policy.h>
-#include"random.h"
-#include"merge_iter.h"
+#include <unistd.h>
+#include <assert.h>
+#include <thread>
+#include <string>
+#include <iostream>
+#include <cstdio>
+#include <mutex>
+#include <atomic>
+#include <cstring>
+#include <rocksdb/slice.h>
+#include <rocksdb/db.h>
+#include <rocksdb/options.h>
+#include <rocksdb/table.h>
+#include <rocksdb/filter_policy.h>
+#include "random.h"
+#include "merge_iter.h"
 #define TOTAL_NUM 320000000LL
-#define READ_NUM 200000
-#define EXPAND_QUEUE_SIZE TOTAL_NUM/100
+#define READ_NUM 1
+#define EXPAND_QUEUE_SIZE TOTAL_NUM / 10000
 #define QUEUE_NUM 8
 #define key_size_ 28
 #define SEED 4321
 #define BATCH_SIZE 32
 #define MULTITHREAD_SCAN
-
 
 /*
     读请求
@@ -32,7 +31,6 @@
     本程序只能处理读请求point query，并且考虑使用multiget减缓压力
 */
 
-
 using namespace std;
 
 struct async_requests
@@ -41,87 +39,108 @@ struct async_requests
     int key;
     short scan_size;
     bool write;
-    async_requests():seq(0),key(0),scan_size(0),write(false){
+    async_requests() : seq(0), key(0), scan_size(0), write(false)
+    {
     }
 };
-struct scan_results{
-    vector<string> result[QUEUE_NUM];
-    // int n_[QUEUE_NUM];
-    rocksdb::Iterator* iter[QUEUE_NUM];
-    bool scan_over[QUEUE_NUM];
-    int scan_size;
+struct scan_results
+{
+    vector<rocksdb::Slice> result[QUEUE_NUM];
 };
 mutex mt;
 atomic<int> tail[QUEUE_NUM];
-async_requests qs[QUEUE_NUM][TOTAL_NUM/QUEUE_NUM+EXPAND_QUEUE_SIZE];
-scan_results scans[READ_NUM];
-bool recycle[READ_NUM];
-bool recycles[QUEUE_NUM][READ_NUM];
-string value=string('0',100);
-class Multi_db_iterator{
-    private:
-        rocksdb::DB** dbs;
-    public:
-        Multi_db_iterator(rocksdb::DB* dbs[]):dbs(dbs){
-            rocksdb::ReadOptions options(true,true);
-            
-        }
+async_requests qs[QUEUE_NUM][TOTAL_NUM / QUEUE_NUM + EXPAND_QUEUE_SIZE];
+// scan_results scans[READ_NUM];
+enum SCAN_STATUS : short
+{
+    SCAN_OVER,
+    MERGE_START,
+    NEED_ITER,
+    ITER_OVER
 };
-unsigned long duration_ns(timespec start,timespec end){
+SCAN_STATUS scan_status[QUEUE_NUM];
+vector<rocksdb::Slice> scans[QUEUE_NUM];
+bool over = false;
+string value = string('0', 100);
+class Multi_db_iterator
+{
+private:
+    rocksdb::DB **dbs;
+
+public:
+    Multi_db_iterator(rocksdb::DB *dbs[]) : dbs(dbs)
+    {
+        rocksdb::ReadOptions options(true, true);
+    }
+};
+unsigned long duration_ns(timespec start, timespec end)
+{
     unsigned long ns;
-    ns=end.tv_sec*1000000000LL+end.tv_nsec-start.tv_sec*1000000000LL-start.tv_nsec;
+    ns = end.tv_sec * 1000000000LL + end.tv_nsec - start.tv_sec * 1000000000LL - start.tv_nsec;
     return ns;
 }
-void GenerateKeyFromInt(uint64_t v, char* key) {
-    char* start = key;
-    char* pos = start;
+void GenerateKeyFromInt(uint64_t v, char *key)
+{
+    char *start = key;
+    char *pos = start;
     int bytes_to_fill = std::min(key_size_, 8);
-    for (int i = 0; i < bytes_to_fill; ++i) {
+    for (int i = 0; i < bytes_to_fill; ++i)
+    {
         pos[i] = (v >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
     }
     pos += bytes_to_fill;
-    if (key_size_ > pos - start) {
-      memset(pos, '0', key_size_ - (pos - start));
+    if (key_size_ > pos - start)
+    {
+        memset(pos, '0', key_size_ - (pos - start));
     }
-  }
- enum WriteMode {
-    RANDOM, SEQUENTIAL, UNIQUE_RANDOM
-  };
-class KeyGenerator {
-   public:
-    KeyGenerator(rocksdb::Random64* rand, WriteMode mode, uint64_t num,
+}
+enum WriteMode
+{
+    RANDOM,
+    SEQUENTIAL,
+    UNIQUE_RANDOM
+};
+class KeyGenerator
+{
+public:
+    KeyGenerator(rocksdb::Random64 *rand, WriteMode mode, uint64_t num,
                  uint64_t /*num_per_set*/ = 64 * 1024)
-        : rand_(rand), mode_(mode), num_(num), next_(0) {
-      if (mode_ == UNIQUE_RANDOM) {
-        // NOTE: if memory consumption of this approach becomes a concern,
-        // we can either break it into pieces and only random shuffle a section
-        // each time. Alternatively, use a bit map implementation
-        // (https://reviews.facebook.net/differential/diff/54627/)
-        values_.resize(num_);
-        for (uint64_t i = 0; i < num_; ++i) {
-          values_[i] = i;
+        : rand_(rand), mode_(mode), num_(num), next_(0)
+    {
+        if (mode_ == UNIQUE_RANDOM)
+        {
+            // NOTE: if memory consumption of this approach becomes a concern,
+            // we can either break it into pieces and only random shuffle a section
+            // each time. Alternatively, use a bit map implementation
+            // (https://reviews.facebook.net/differential/diff/54627/)
+            values_.resize(num_);
+            for (uint64_t i = 0; i < num_; ++i)
+            {
+                values_[i] = i;
+            }
+            rocksdb::RandomShuffle(values_.begin(), values_.end(),
+                                   static_cast<uint32_t>(1000));
         }
-        rocksdb::RandomShuffle(values_.begin(), values_.end(),
-                      static_cast<uint32_t>(1000));
-      }
     }
 
-    uint64_t Next() {
-      switch (mode_) {
+    uint64_t Next()
+    {
+        switch (mode_)
+        {
         case SEQUENTIAL:
-          return next_++;
+            return next_++;
         case RANDOM:
-          return rand_->Next() % num_;
+            return rand_->Next() % num_;
         case UNIQUE_RANDOM:
-          assert(next_ < num_);
-          return values_[next_++];
-      }
-      assert(false);
-      return std::numeric_limits<uint64_t>::max();
+            assert(next_ < num_);
+            return values_[next_++];
+        }
+        assert(false);
+        return std::numeric_limits<uint64_t>::max();
     }
 
-   private:
-    rocksdb::Random64* rand_;
+private:
+    rocksdb::Random64 *rand_;
     WriteMode mode_;
     const uint64_t num_;
     uint64_t next_;
@@ -133,324 +152,332 @@ class KeyGenerator {
 *   考虑是否做聚合？
 *   
 */
-void worker_thread(int queue_seq,rocksdb::DB* db){
-    timespec start,end;
+void worker_thread(int queue_seq, rocksdb::DB *db)
+{
+    timespec start, end;
     char key[key_size_];
-    rocksdb::Slice k(key,key_size_);
+    rocksdb::Slice k(key, key_size_);
     vector<string> values(BATCH_SIZE);
-    int seq=0;
-    bool endflag=0;
-    int batch_size=0;
+    int seq = 0;
+    bool endflag = 0;
+    int batch_size = 0;
     string result;
-    auto readoptions=rocksdb::ReadOptions(true,true);
+    auto readoptions = rocksdb::ReadOptions(true, true);
     vector<rocksdb::Slice> keys;
     rocksdb::Status s;
-    int found=0,total_scan=0;
-    int scan_times=0;
-    clock_gettime(CLOCK_REALTIME,&start);
-    while(!endflag){
-        while(seq>=tail[queue_seq]){
-          // this_thread::yield();
-          this_thread::sleep_for(chrono::nanoseconds(10));
+    int found = 0, total_scan = 0;
+    int scan_times = 0;
+    clock_gettime(CLOCK_REALTIME, &start);
+    while (!endflag)
+    {
+        while (seq >= tail[queue_seq])
+        {
+            // this_thread::yield();
+            this_thread::sleep_for(chrono::nanoseconds(10));
         }
-        if(qs[queue_seq][seq].seq==-1){
-            endflag=true;
+        if (qs[queue_seq][seq].seq == -1)
+        {
+            endflag = true;
             break;
         }
-        async_requests a=qs[queue_seq][seq];
-        GenerateKeyFromInt(a.key,key);
-        rocksdb::Iterator* iter=db->NewIterator(readoptions);
-        total_scan+=a.scan_size;
+        async_requests a = qs[queue_seq][seq];
+        GenerateKeyFromInt(a.key, key);
+        rocksdb::Iterator *iter = db->NewIterator(readoptions);
+        total_scan += a.scan_size;
         iter->Seek(k);
-        if(iter->Valid() && a.scan_size){
+
+        if (iter->Valid())
+        {
             found++;
-            int i=1;
-            scans[seq].result[queue_seq].push_back(iter->key().ToString());
-            for(;i<a.scan_size;i++){
-                // cout << iter->key().ToString() <<" "<< int(iter->key().data()[6])<<","<< int(iter->key().data()[7]) << endl;
+            int size = 0;
+            string str = iter->key().ToString();
+            scans[queue_seq][size] = rocksdb::Slice(str);
+            size++;
+            mt.lock();
+            cout << queue_seq << " " << scans[queue_seq][0].ToString() << "  " << int(scans[queue_seq][0].data()[6]) << "," << int(scans[queue_seq][0].data()[7]) << endl;
+            mt.unlock();
+            for (int i = 1; i < a.scan_size; i++)
+            {
                 iter->Next();
-                if(!iter->Valid())break;
-                scans[seq].result[queue_seq].push_back(iter->key().ToString());
+                if (!iter->Valid())
+                    break;
+                string str2 = iter->key().ToString();
+                scans[queue_seq][size] = rocksdb::Slice(str2);
+                size++;
+
                 found++;
             }
+            // mt.lock();
+            // cout << queue_seq <<" "<< scans[queue_seq][0].ToString() << "  "<< int( scans[queue_seq][0].data()[6])<<","<<int(scans[queue_seq][0].data()[7])<<endl;
+            // mt.unlock();
+            // mt.lock();
+            // cout<<queue_seq<< "need SCAN_OVER"<<endl;
+            // mt.unlock();
+            scan_status[queue_seq] = MERGE_START;
+
+            while (scan_status[queue_seq] != SCAN_OVER)
+            {
+                // this_thread::sleep_for(chrono::milliseconds(100));
+                if (scan_status[queue_seq] == NEED_ITER)
+                {
+                    // mt.lock();
+                    // cout<<queue_seq<< "MORE_ITER"<<endl;
+                    // mt.unlock();
+                    for (int i = 0; i < a.scan_size; i++)
+                    {
+                        iter->Next();
+                        if (!iter->Valid())
+                            break;
+                        scans[queue_seq].push_back(rocksdb::Slice(iter->key().ToString()));
+                        found++;
+                    }
+                    scan_status[queue_seq] = ITER_OVER;
+                }
+                this_thread::yield();
+            }
+            scans[queue_seq].clear();
         }
-        scans[seq].iter[queue_seq]=iter;
-        scans[seq].scan_over[queue_seq]=true;
+
         scan_times++;
+        delete iter;
         seq++;
-    }  
-    clock_gettime(CLOCK_REALTIME,&end);
-    auto atime=duration_ns(start,end);
+    }
+    clock_gettime(CLOCK_REALTIME, &end);
+    // if(seq==0)return;
+    auto atime = duration_ns(start, end);
+    // rocksdb.levelstats
     string stats;
-    db->GetProperty("rocksdb.levelstats",&stats); 
+    db->GetProperty("rocksdb.levelstats", &stats);
     mt.lock();
-    cout <<"线程"<<queue_seq<<"处理请求数"<<seq<<"个，找到"<<found<<"/"<<total_scan<<"个平均处理时间："<<atime/seq <<"ns, QPS："<<1000000000LL*seq/atime<<", 换算为128BKV的吞吐率为"<< 1000000000LL*128/1024/1024*found/atime <<"MiB/s" <<endl;
+    cout << "线程" << queue_seq << "处理请求数" << seq << "个，找到" << found << "/" << total_scan << "个平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * found / atime << "MB/s" << endl;
     // cout << stats <<endl;
-    mt.unlock();  	
+    mt.unlock();
 }
 
 class vector_merge_iter
 {
 private:
     int now[QUEUE_NUM];
-    Iterator* db_iters[QUEUE_NUM];
+    // vector<rocksdb::Slice>* children_[QUEUE_NUM];
     int current_;
-    vector<string>* children_;
-    const rocksdb::Comparator* comparator_;
+    const rocksdb::Comparator *comparator_;
+
 public:
-    vector_merge_iter(int num):children_(scans[num].result),current_(0),comparator_(rocksdb::BytewiseComparator()){
-        for(int i=0;i<QUEUE_NUM;i++){
-            db_iters[i]=scans[num].iter[i];
-            now[i]=0;
-        }  
+    vector_merge_iter() : current_(0), comparator_(rocksdb::BytewiseComparator())
+    {
+        for (int i = 0; i < QUEUE_NUM; i++)
+        {
+            now[i] = 0;
+            // mt.lock();
+            // cout <<" "<< scans[i][now[i]].ToString() << "  "<< int( scans[i][now[i]].data()[6])<<","<<int(scans[i][now[i]].data()[7])<<endl;
+            // mt.unlock();
+        }
         FindSmallest();
     };
-    vector_merge_iter():current_(0),comparator_(rocksdb::BytewiseComparator()){
+    ~vector_merge_iter();
 
-    }
-    ~vector_merge_iter(){
-    };
-    void recycle(){
-        for(int i=0;i<QUEUE_NUM;i++)
-            delete db_iters[i];
-    }
-    void init(int num){
-        children_=scans[num].result;
-        for(int i=0;i<QUEUE_NUM;i++){
-            now[i]=0;
-            if(children_[i].size()==0){
-                now[i]=-1;
-            }
-            db_iters[i]=scans[num].iter[i];
-        }
+    bool Next()
+    {
+        if (scans[current_].size() <= now[current_] + 1)
+            return false;
+        now[current_]++;
         FindSmallest();
-    }
-    rocksdb::Slice get_key(int i){
-        if(now[i]!=-1){
-            return children_[i][now[i]];
-        }
-        if(!db_iters[i]->Valid())return NULL;
-        return db_iters[i]->key();
-    }
-
-    void Next(){
-        if(now[current_]!=-1){
-            now[current_]++;
-            if(now[current_]>=children_[current_].size()){
-                now[current_]=-1;
-            }
-        }else{
-            db_iters[current_]->Next();
-        }
-        FindSmallest();
+        return true;
     };
-    int Current(){
+    int Current()
+    {
         return current_;
     }
-    void FindSmallest(){
-        int smallest=0;
-        rocksdb::Slice smallest_key=get_key(0);
-        for (int i = 1; i < QUEUE_NUM; i++) {
-            rocksdb::Slice key= get_key(i);
-            if(key!=NULL){
-                if(smallest==NULL){
-                    smallest=i;
-                }else if (comparator_->Compare(key, smallest_key) < 0) {
-                    smallest = i;
-                    smallest_key=key;
-                }
+    void FindSmallest()
+    {
+        int smallest = 0;
+        rocksdb::Slice smallest_key = scans[0][now[0]];
+        for (int i = 1; i < QUEUE_NUM; i++)
+        {
+            rocksdb::Slice key = scans[i][now[i]];
+            if (comparator_->Compare(key, smallest_key) < 0)
+            {
+                smallest = i;
+                smallest_key = key;
             }
         }
-        current_=smallest;
+        current_ = smallest;
     };
-    
-    rocksdb::Slice key(){
-        return get_key(current_);
+
+    rocksdb::Slice key()
+    {
+        return scans[current_].at(now[current_]);
     };
-    bool Valid(){
-        if(now[current_]<children_[current_].size()){
-            return true;
-        }else if(now[current_]==-1){
-            return db_iters[current_]->Valid();
-        }
-    }
 };
 
-void merge_thread(){
-    int seq=0;
-    int found=0;
-    timespec start,end;
-    vector_merge_iter* mergeiter=new vector_merge_iter();
-    clock_gettime(CLOCK_REALTIME,&start);
-    while (seq<READ_NUM)
+void merge_thread()
+{
+    int seq = 0;
+    while (seq < READ_NUM)
     {
-        for(int i=0;i<QUEUE_NUM;i++){
-            while (scans[seq].scan_over[i]==false)
+        for (int i = 0; i < QUEUE_NUM; i++)
+        {
+            while (scan_status[i] != MERGE_START)
             {
+                // mt.lock();
+                // cout<< i <<"need merge_start"<<endl;
+                // mt.unlock();
+                // this_thread::sleep_for(chrono::milliseconds(100));
                 this_thread::yield();
             }
         }
-        int i=0;
-        mergeiter->init(seq);
-        int scan_size=scans[seq].scan_size;
-        for(i=1;i<scan_size;i++){
-            mergeiter->Next();
-            if(!mergeiter->Valid())break;
-        }
-        // mergeiter->recycle();
-        // delete mergeiter;
-        recycle[seq]=true;
-        found+=i;
-        seq++;
-        // cout << seq <<"<"<<READ_NUM<<":"<<(seq<READ_NUM)<<endl;
-    }
-    clock_gettime(CLOCK_REALTIME,&end);
-    auto atime=duration_ns(start,end);
-    mt.lock();
-    cout<<"归并线程处理请求数"<<seq<<"个，scanKV数量："<<found<<",平均处理时间"<<atime/seq<<"ns,QPS:"<<seq*1000000000LL/atime<<",换算为128KV吞吐率为"<<1000000000LL*128/1024/1024*found/atime<<"MiB/s"<<endl;
-    mt.unlock();
-}
 
+        vector_merge_iter *mergeiter = new vector_merge_iter();
+        for (int i = 1; i < 100; i++)
+        {
+            // cout << mergeiter->key().ToString() << "  "<< unsigned(mergeiter->key().data()[6])<<","<<unsigned(mergeiter->key().data()[7])<<endl;
+            bool s = mergeiter->Next();
+            if (!s)
+            {
 
-
-void recycle_thread(){
-    int seq=0;
-    while (seq<READ_NUM)
-    {
-        if(recycle[seq]){
-            for(int i=0;i<QUEUE_NUM;i++){
-                delete scans[seq].iter[i];
+                int current = mergeiter->Current();
+                scan_status[current] = NEED_ITER;
+                while (scan_status[current] != ITER_OVER)
+                {
+                    // mt.lock();
+                    // cout<< "need ITER_OVER"<<endl;
+                    // mt.unlock();
+                    // this_thread::sleep_for(chrono::milliseconds(100));
+                    this_thread::yield();
+                }
+                s = mergeiter->Next();
+                assert(s);
             }
-            seq++;
         }
-        this_thread::yield();
+        for (int i = 0; i < QUEUE_NUM; i++)
+        {
+            scan_status[i] = SCAN_OVER;
+        }
+        seq++;
     }
-    
 }
-void recycle_thread2(int q_num){
-    int seq=0;
-    while (seq<READ_NUM)
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
     {
-        if(recycles[q_num][seq]){
-            delete scans[seq].iter[q_num];
-            seq++;
-        }
-        this_thread::yield();
+        printf("please enter the directory of db_path as paramater \n(e.g.: scan_test /mnt/optanessd/db)");
+        return 0;
     }
-}
-int main(){
-  //db初始化
-    const string DBPath = "/mnt/optanessd/db_single_thread";
-    rocksdb::DB* db[QUEUE_NUM];
+    //db init
+    const string DBPath = argv[1];
+    rocksdb::DB *db[QUEUE_NUM];
     rocksdb::Options options;
-    options.compression=rocksdb::kNoCompression;
+    options.compression = rocksdb::kNoCompression;
     options.create_if_missing = true;
-    options.max_background_jobs=88;
-    rocksdb::BlockBasedTableOptions* table_options =
-          reinterpret_cast<rocksdb::BlockBasedTableOptions*>(
-              options.table_factory->GetOptions());
-        table_options->filter_policy.reset(rocksdb::NewBloomFilterPolicy(
-            10, false));
-      
-    for(int i=0;i<QUEUE_NUM;i++){
+    options.max_background_jobs = 40;
+    rocksdb::BlockBasedTableOptions *table_options =
+        reinterpret_cast<rocksdb::BlockBasedTableOptions *>(
+            options.table_factory->GetOptions());
+    table_options->filter_policy.reset(rocksdb::NewBloomFilterPolicy(
+        10, false));
+
+    for (int i = 0; i < QUEUE_NUM; i++)
+    {
         char c[3];
-        std::sprintf(c,"%03d",i);
-        rocksdb::Status status = rocksdb::DB::Open(options,DBPath+c, &db[i]);
+        std::sprintf(c, "%03d", i);
+        rocksdb::Status status = rocksdb::DB::Open(options, DBPath + c, &db[i]);
         assert(status.ok());
     }
-    rocksdb::Random64* rand=new rocksdb::Random64(SEED);
-    KeyGenerator keygen(rand,WriteMode::RANDOM,TOTAL_NUM-1000);
-    KeyGenerator scansizegen(new rocksdb::Random64(SEED),WriteMode::RANDOM,49);
-    rocksdb::Iterator* iters[QUEUE_NUM];
-    for(int i=0;i<QUEUE_NUM;i++){
-        iters[i]=db[i]->NewIterator(rocksdb::ReadOptions(true,true));
+    rocksdb::Random64 *rand = new rocksdb::Random64(SEED);
+    KeyGenerator keygen(rand, WriteMode::SEQUENTIAL, TOTAL_NUM - 1000);
+    KeyGenerator scansizegen(new rocksdb::Random64(SEED), WriteMode::RANDOM, 49);
+    rocksdb::Iterator *iters[QUEUE_NUM];
+    for (int i = 0; i < QUEUE_NUM; i++)
+    {
+        iters[i] = db[i]->NewIterator(rocksdb::ReadOptions(true, true));
     }
-  
-    // MergingIterator* merge_iter=new MergingIterator(rocksdb::BytewiseComparator(),iters,QUEUE_NUM);
-    // merge_iter->SeekToFirst();
-    //线程分配
-    #ifdef MULTITHREAD_SCAN
-    for(int i=0;i<QUEUE_NUM;i++){
-        tail[i]=0;
+
+// MergingIterator* merge_iter=new MergingIterator(rocksdb::BytewiseComparator(),iters,QUEUE_NUM);
+// merge_iter->SeekToFirst();
+//线程分配
+#ifdef MULTITHREAD_SCAN
+    for (int i = 0; i < QUEUE_NUM; i++)
+    {
+        tail[i] = 0;
     }
-    for(int i=0;i<READ_NUM;i++){
-        recycle[i]=false;
-        for(int j=0;j<QUEUE_NUM;j++){
-            scans[i].result[j].reserve(100);
-            scans[i].scan_over[j]=false;
-            // recycles[j][i]=false;
-        }
+    for (int i = 0; i < QUEUE_NUM; i++)
+    {
+        scan_status[i] = SCAN_OVER;
+        scans[i].reserve(100);
+        // for(int j=0;j<QUEUE_NUM;j++){
+        //     scans[i].result[j].resize(100);
+        // }
     }
     //先将请求全部分配
     thread wts[QUEUE_NUM];
-    for(int i=0;i<QUEUE_NUM;i++){
-        wts[i]= thread(worker_thread,i,db[i]);
+    for (int i = 0; i < QUEUE_NUM; i++)
+    {
+        wts[i] = thread(worker_thread, i, db[i]);
     }
-    thread mt=thread(merge_thread);
-    thread ct=thread(recycle_thread);
-    ct.detach();
-    // thread cts[QUEUE_NUM];
-    // for(int i=0;i<QUEUE_NUM;i++){
-    //     cts[i]=thread(recycle_thread2,i);
-    //     cts[i].detach();
-    // }
-    #endif
-    timespec start,middle,end;
-    clock_gettime(CLOCK_REALTIME,&start);
-    int i,q_num=0;
+    thread mt = thread(merge_thread);
+#endif
+    timespec start, middle, end;
+    clock_gettime(CLOCK_REALTIME, &start);
+    int i, q_num = 0;
     int key;
-    int scan_size=100;
-    int scan_per_db=13;
-    for(i=0;i<READ_NUM;i++){
-        key=keygen.Next();
-        // scan_size=scansizegen.Next()+1;
-        #ifdef MULTITHREAD_SCAN
-        scans[i].scan_size=scan_size;
-        for(q_num=0;q_num<QUEUE_NUM;q_num++){
-            qs[q_num][tail[q_num]].seq=i;
-            qs[q_num][tail[q_num]].key=key;
-            qs[q_num][tail[q_num]].write=false;
-            qs[q_num][tail[q_num]].scan_size=scan_per_db;
+    int scan_size = 100;
+    for (i = 0; i < READ_NUM; i++)
+    {
+        key = keygen.Next();
+        key = 0;
+// scan_size=scansizegen.Next()+1;
+#ifdef MULTITHREAD_SCAN
+        for (q_num = 0; q_num < QUEUE_NUM; q_num++)
+        {
+            qs[q_num][tail[q_num]].seq = i;
+            qs[q_num][tail[q_num]].key = key;
+            qs[q_num][tail[q_num]].write = false;
+            qs[q_num][tail[q_num]].scan_size = scan_size;
             tail[q_num]++;
         }
-        #else
-            //scan迭代器初始化
-            rocksdb::Iterator* iters[QUEUE_NUM];
-            for(int j=0;j<QUEUE_NUM;j++){
-                iters[j]=db[j]->NewIterator(rocksdb::ReadOptions(true,true));
-            }
-            MergingIterator* merge_iter=new MergingIterator(rocksdb::BytewiseComparator(),iters,QUEUE_NUM);
-            char keystr[key_size_];
-            GenerateKeyFromInt(key,keystr);
-            merge_iter->Seek(rocksdb::Slice(keystr,key_size_));
-            for(int j=0;j<scan_size && merge_iter->Valid();j++){
-                //  cout << merge_iter->key().ToString() << "  "<< unsigned(merge_iter->key().data()[6])<<","<<unsigned(merge_iter->key().data()[7])<<endl;
-                merge_iter->Next();
-            }
-            delete merge_iter;
-        #endif
+#else
+        //scan迭代器初始化
+        rocksdb::Iterator *iters[QUEUE_NUM];
+        for (int j = 0; j < QUEUE_NUM; j++)
+        {
+            iters[j] = db[j]->NewIterator(rocksdb::ReadOptions(true, true));
+        }
+        MergingIterator *merge_iter = new MergingIterator(rocksdb::BytewiseComparator(), iters, QUEUE_NUM);
+        char keystr[key_size_];
+        GenerateKeyFromInt(key, keystr);
+        merge_iter->Seek(rocksdb::Slice(keystr, key_size_));
+        for (int j = 0; j < scan_size && merge_iter->Valid(); j++)
+        {
+            //  cout << merge_iter->key().ToString() << "  "<< unsigned(merge_iter->key().data()[6])<<","<<unsigned(merge_iter->key().data()[7])<<endl;
+            merge_iter->Next();
+        }
+        delete merge_iter;
+#endif
     }
     cout << i << endl;
-    for(int i=0;i<QUEUE_NUM;i++){
-        qs[i][tail[i]].seq=-1;
-        qs[i][tail[i]].key=-1;
+    for (int i = 0; i < QUEUE_NUM; i++)
+    {
+        qs[i][tail[i]].seq = -1;
+        qs[i][tail[i]].key = -1;
         tail[i]++;
     }
-    
-    clock_gettime(CLOCK_REALTIME,&middle);  
-    #ifdef MULTITHREAD_SCAN
-    for(int j=0;j<QUEUE_NUM;j++){
+
+    clock_gettime(CLOCK_REALTIME, &middle);
+#ifdef MULTITHREAD_SCAN
+    for (int j = 0; j < QUEUE_NUM; j++)
+    {
         wts[j].join();
     }
     mt.join();
-    #endif
-    clock_gettime(CLOCK_REALTIME,&end);
-    uint64_t atime,btime;
-    atime=duration_ns(start,middle);
-    btime=duration_ns(start,end);
-    cout << "负载准备时间：............." << endl;
-    cout <<"平均生成时间："<<atime/READ_NUM <<"ns, QPS："<<1000000000LL*READ_NUM/atime<<", 换算为128BKV的吞吐率为"<< 1000000000LL*128/1024/1024*READ_NUM/atime <<"MB/s" <<endl;
-    cout <<"两线程竞争测试:............"<<endl;
-    cout <<"平均完成时间："<<btime/READ_NUM <<"ns, QPS："<<1000000000LL*READ_NUM/btime<<", 换算为128BKV的吞吐率为"<< 1000000000LL*128/1024/1024*READ_NUM*scan_size/btime <<"MB/s" <<endl;
+#endif
+    clock_gettime(CLOCK_REALTIME, &end);
+    uint64_t atime, btime;
+    atime = duration_ns(start, middle);
+    btime = duration_ns(start, end);
+    cout << "generating requests：............." << endl;
+    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", throuputs:" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "processing requests:............" << endl;
+    cout << "request processing time (avg)：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", throuputs:" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM * 100 / btime << "MB/s" << endl;
     return 0;
 }
