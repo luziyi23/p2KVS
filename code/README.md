@@ -95,16 +95,24 @@ This is an optional parameter in the format of VALUE_{S} (e.g. VALUE_128). This 
 
 After the YCSB test program has been compiled with the appropriate configuration selected from the macro definition above, execute the YCSB test by the pre-generated trace file:
 ```sh
-# complie with -D {NAME}_LOAD
+# complie 
+make ycsb BENCHMARK={NAME}_LOAD IB=Q8B32 KVSIZE=VALUE_128
+#run ycsb load
 ycsb /mnt/optanessd/db trace/load_a_0.trace
-# complie with -D {NAME}_RUN
+# complie
+make ycsb BENCHMARK={NAME}_RUN IB=Q8B32 KVSIZE=VALUE_128
+#run a~d
 ycsb /mnt/optanessd/db trace/run_a_0.trace
 ycsb /mnt/optanessd/db trace/run_b_0.trace
 ycsb /mnt/optanessd/db trace/run_c_0.trace
 ycsb /mnt/optanessd/db trace/run_d_0.trace
-# complie with -D {NAME}_SCAN
+# complie 
+make ycsb BENCHMARK={NAME}_SCAN IB=Q8B32 KVSIZE=VALUE_128
+# run ycsb e
 ycsb /mnt/optanessd/db trace/run_e_0.trace
-# complie with -D {NAME}_F
+# complie
+make ycsb BENCHMARK={NAME}_F IB=Q8B32 KVSIZE=VALUE_128
+# run ycsb f
 ycsb /mnt/optanessd/db trace/run_f_0.trace
 ```
 

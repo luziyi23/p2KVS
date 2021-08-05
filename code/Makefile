@@ -43,10 +43,10 @@ scan_test: scan_test.cpp
 	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM)
 
 ycsb: ycsb.cpp
-	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o $@ 
+	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o $@ -D${BENCHMARK} -D${IB} -D${KVSIZE}
 
 clean_rocksdb:
 	$(MAKE) -C $(ROCKSDB_DIR) clean
 
 clean:
-	-rm $(OBJECTS)
+	-rm -f $(OBJECTS)

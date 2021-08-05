@@ -346,7 +346,7 @@ int main(int argc, char *argv[])
     bool destroydb = false;
     if (argc != 3)
     {
-        printf("please enter the directory of db_path and trace_file as the two paramaters \n(e.g.: ycsb /mnt/optanessd/db trace/load_a_0.trace)");
+        printf("please enter the directory of db_path and trace_file as the two paramaters \n(e.g.: ycsb /mnt/optanessd/db trace/load_a_0.trace)\n");
         return 0;
     }
 #ifndef TOTAL_NUM
