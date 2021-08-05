@@ -6,8 +6,9 @@ ROCKSDB_FLAG = -lrocksdb -ldl -lzstd -llz4 -lbz2 -lsnappy -lz
 LEVELDB_FLAG = -lleveldb
 OBJECTS = write_test read_test scan_test ycsb
 
-TOTAL_NUM=${OPNUM}
+TOTAL_NUM=${DATANUM}
 QUEUE_NUM=${INSTNUM}
+READ_NUM=${READNUM}
 
 .PHONY : clean rocksdb
 
@@ -18,8 +19,8 @@ rocksdb: write_test read_test scan_test ycsb
 	
 	
 
-# leveldb:
-    # write_test_leveldb read_test_leveldb scan_test_leveldb ycsb_leveldb
+leveldb:
+    write_test_leveldb read_test_leveldb 
 
 install:
 	$(MAKE) -C $(ROCKSDB_DIR) install
@@ -34,7 +35,7 @@ read_test_default: read_test.cpp
 	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o read_test
 
 read_test: read_test.cpp
-	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM)
+	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM) -DREAD_NUM=${READ_NUM}
 
 scan_test_default: scan_test.cpp
 	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o scan_test
@@ -44,6 +45,14 @@ scan_test: scan_test.cpp
 
 ycsb: ycsb.cpp
 	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o $@ -D${BENCHMARK} -D${IB} -D${KVSIZE}
+
+
+write_test_leveldb: write_test_leveldb.cpp
+	g++ $^  -mcmodel=medium --std=c++14 -lleveldb -lpthread -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM)
+	
+read_test_leveldb: read_test_leveldb.cpp
+	g++ $^  -mcmodel=medium --std=c++14 -lleveldb -lpthread -fopenmp -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM)  -DREAD_NUM=${READ_NUM}
+
 
 clean_rocksdb:
 	$(MAKE) -C $(ROCKSDB_DIR) clean

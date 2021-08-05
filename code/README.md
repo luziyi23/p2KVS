@@ -46,7 +46,7 @@ We made scripts for four test cases, including write tests, read tests, scan tes
 
 Before performing the read and scan tests, you need to load a certain number of datasets through the write test. Each YCSB test are often done in two steps by running the trace that loads the dataset and the trace that actually executes workloads.
 
-The number of instances in p2KVS and the KV size can be set at compile time.
+The number of instances (INSTNUM) in p2KVS and the size of dataset (DATANUM) can be set at compile time. The environment variable DATANUM represents the size of the data set, the number of records that will be written in the write test. In read and scan tests, the amount of data to be read (READNUM) need to be specified.
 
 ## microbenchmark
 1. Complie p2KVS prototype test program in the default settings.
@@ -65,9 +65,9 @@ The number of instances in p2KVS and the KV size can be set at compile time.
    ```
 2. Complie p2KVS with custom numbers of requests and instance.
    ```
-   make write_test OPNUM=32000000 INSTNUM=8
-   make read_test OPNUM=1000000 INSTNUM=8
-   make scan_test OPNUM=10000 INSTNUM=8
+   make write_test DATANUM=32000000 INSTNUM=8
+   make read_test DATANUM=32000000 READNUM=1000000 INSTNUM=8
+   make scan_test DATANUM=32000000 READNUM=10000 INSTNUM=8
    ```
    Note that the number of instances when testing the same DB must be the same (the number of requests can vary).
 

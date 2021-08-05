@@ -14,10 +14,16 @@
 #include <rocksdb/filter_policy.h>
 #include "random.h"
 #include "merge_iter.h"
+#ifndef TOTAL_NUM
 #define TOTAL_NUM 320000000LL
-#define READ_NUM 1
+#endif
+#ifndef READ_NUM
+#define READ_NUM 100000LL
+#endif
 #define EXPAND_QUEUE_SIZE TOTAL_NUM / 10000
+#ifndef QUEUE_NUM
 #define QUEUE_NUM 8
+#endif
 #define key_size_ 28
 #define SEED 4321
 #define BATCH_SIZE 32
@@ -249,7 +255,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     string stats;
     db->GetProperty("rocksdb.levelstats", &stats);
     mt.lock();
-    cout << "线程" << queue_seq << "处理请求数" << seq << "个，找到" << found << "/" << total_scan << "个平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * found / atime << "MB/s" << endl;
+    // cout << "线程" << queue_seq << "处理请求数" << seq << "个，找到" << found << "/" << total_scan << "个平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * found / atime << "MB/s" << endl;
     // cout << stats <<endl;
     mt.unlock();
 }

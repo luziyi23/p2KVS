@@ -17,7 +17,10 @@
 #ifndef TOTAL_NUM
 #define TOTAL_NUM 320000000LL
 #endif
+#ifndef READ_NUM
 #define READ_NUM 6400000
+#endif
+
 #define EXPAND_QUEUE_SIZE TOTAL_NUM / 10000
 
 #ifndef QUEUE_NUM
@@ -299,9 +302,9 @@ int main(int argc, char *argv[])
     uint64_t atime, btime;
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
-    cout << "负载准备时间：............." << endl;
-    cout << "平均生成时间：" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
-    cout << "两线程竞争测试:............" << endl;
-    cout << "平均完成时间：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
+    cout << "generating requests：............." << endl;
+    cout << "loading time per request (avg)：" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "processing requests:............" << endl;
+    cout << "request processing time (avg)：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
     return 0;
 }

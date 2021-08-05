@@ -14,9 +14,13 @@
 #include<leveldb/table.h>
 #include<leveldb/filter_policy.h>
 #include"random.h"
-#define TOTAL_SIZE 100000000LL
-#define EXPAND_QUEUE_SIZE TOTAL_SIZE/10+1
+#ifndef TOTAL_NUM
+#define TOTAL_NUM 320000000LL
+#endif
+#define EXPAND_QUEUE_SIZE TOTAL_NUM/10+1
+#ifndef QUEUE_NUM
 #define QUEUE_NUM 8
+#endif
 #define key_size_ 28
 #define SEED 14664
 #define BATCH_SIZE 1
@@ -49,7 +53,7 @@ struct async_requests
 };
 mutex mt;
 int tail[QUEUE_NUM];
-async_requests qs[QUEUE_NUM][TOTAL_SIZE/QUEUE_NUM+EXPAND_QUEUE_SIZE];
+async_requests qs[QUEUE_NUM][TOTAL_NUM/QUEUE_NUM+EXPAND_QUEUE_SIZE];
 
 
 
@@ -195,10 +199,15 @@ void worker_thread(int queue_seq,leveldb::DB* db){
     // cout << stats<<endl;
     mt.unlock();  	
 }
-int main(){
-  //db初始化
-    const string DBPath = "/mnt/optanessd/db_single_thread";
-    leveldb::DB* db[QUEUE_NUM];
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        printf("please enter the directory of db_path as paramater \n(e.g.: write_test_leveldb /mnt/optanessd/db)");
+        return 0;
+    }
+    //db init
+    const string DBPath = argv[1];
         leveldb::Options options;
         options.compression=leveldb::kNoCompression;
         options.create_if_missing = true;
@@ -222,7 +231,7 @@ int main(){
       assert(status.ok());
     }   
     rocksdb::Random64* rand=new rocksdb::Random64(SEED);
-    KeyGenerator keygen(rand,UNIQUE_RANDOM,TOTAL_SIZE);
+    KeyGenerator keygen(rand,UNIQUE_RANDOM,TOTAL_NUM);
     //线程分配
     for(int i=0;i<QUEUE_NUM;i++){
         tail[i]=0;
@@ -234,7 +243,7 @@ int main(){
         wts[i]= thread(worker_thread,i,db[0]);
     }
     clock_gettime(CLOCK_REALTIME,&start);
-    for(int i=0;i<TOTAL_SIZE;i++){
+    for(int i=0;i<TOTAL_NUM;i++){
         uint64_t key=keygen.Next();
         int q_num=key%QUEUE_NUM;
         qs[q_num][tail[q_num]].seq=i;
@@ -259,12 +268,12 @@ int main(){
     // for(int j=0;j<QUEUE_NUM;j++){
     //     db[j]->Close();
     // }
-    uint64_t atime,btime;
-    atime=duration_ns(start,middle);
-    btime=duration_ns(start,end);
-    cout << "负载准备时间：............." << endl;
-    cout <<"平均生成时间："<<atime/TOTAL_SIZE <<"ns, QPS："<<1000000000LL*TOTAL_SIZE/atime<<", 换算为128BKV的吞吐率为"<< 1000000000LL*128/1024/1024*TOTAL_SIZE/atime <<"MB/s" <<endl;
-    cout <<"两线程竞争测试:............"<<endl;
-    cout <<"平均完成时间："<<btime/TOTAL_SIZE <<"ns, QPS："<<1000000000LL*TOTAL_SIZE/btime<<", 换算为128BKV的吞吐率为"<< 1000000000LL*128/1024/1024*TOTAL_SIZE/btime <<"MB/s" <<endl;
+    uint64_t atime, btime;
+    atime = duration_ns(start, middle);
+    btime = duration_ns(start, end);
+    cout << "generating requests：............." << endl;
+    cout << "loading time per request (avg)：" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "processing requests:............" << endl;
+    cout << "request processing time (avg)：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
     return 0;
 }
