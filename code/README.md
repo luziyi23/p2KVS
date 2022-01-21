@@ -117,3 +117,7 @@ ycsb /mnt/optanessd/db trace/run_f_0.trace
 ```
 
 It is recommended to refer to scripts/ycsb.sh to perform a complete YCSB test. 
+
+
+
+This repository only exposes part of the test scripts and related codes, mainly including core micro- and marco-benchmark tests of p2KVS.
