@@ -1,2 +1,6 @@
 # p2KVS
-p2KVS: a Portable Parallelizing Scheduler to Speed Up LSM-tree Based KV Stores on High-performance SSDs
+
+This repository is the code of our paper
+"p2KVS: a Portable 2-Dimensional Parallelizing Framework to Improve Scalability of Key-value Stores on Solid-State Drives"[Eurosys 2022].
+
+# License
