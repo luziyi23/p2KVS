@@ -1,3 +1,6 @@
 [submodule "code/leveldb"]
 	path = code/leveldb
 	url = https://www.github.com/google/leveldb.git
+[submodule "code/FlameGraph"]
+	path = code/FlameGraph
+	url = https://github.com/brendangregg/FlameGraph
