@@ -1,3 +1,4 @@
+This repository only exposes part of the test scripts and related codes, mainly including core micro- and marco-benchmark tests of p2KVS.
 
 # Dependences
 In the sections of motivation and evaluation in our paper, we used some tools for analysis and comparison, so we introduced them as submodules. To execute these parts of the code, please install the submodules.  
@@ -20,4 +21,9 @@ We did not modify the LevelDB code, so LevelDB is integrated into the project as
    ```
 
 
-## Bottleneck analysis
+# Bottleneck analysis
+Check bottleneck_analysis.md.
+
+# Evaluate p2KVS with micro-benchmarks and YCSB
+Check evaluation.md.
+

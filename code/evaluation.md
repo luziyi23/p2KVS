@@ -1,5 +1,4 @@
-This repository only exposes part of the test scripts and related codes, mainly including core micro- and marco-benchmark tests of p2KVS.
-## YCSB
+# YCSB
 We use YCSB benchmarks to generate trace files. The p2KVS prototype can load the trace files and process the operations in the traces. Note that the codes of YCSB has been modified to generate  trace files that conform to a certain format.
 
 Here is the process for generating trace using the modified YCSB:
