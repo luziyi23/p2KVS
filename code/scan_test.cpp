@@ -29,14 +29,6 @@
 #define BATCH_SIZE 32
 #define MULTITHREAD_SCAN
 
-/*
-    读请求
-    point query：分配到请求队列直接查询
-    scan：顺序读负载
-
-    本程序只能处理读请求point query，并且考虑使用multiget减缓压力
-*/
-
 using namespace std;
 
 struct async_requests
@@ -115,10 +107,6 @@ public:
     {
         if (mode_ == UNIQUE_RANDOM)
         {
-            // NOTE: if memory consumption of this approach becomes a concern,
-            // we can either break it into pieces and only random shuffle a section
-            // each time. Alternatively, use a bit map implementation
-            // (https://reviews.facebook.net/differential/diff/54627/)
             values_.resize(num_);
             for (uint64_t i = 0; i < num_; ++i)
             {
@@ -153,11 +141,7 @@ private:
     std::vector<uint64_t> values_;
 };
 
-/*
-*   读请求也作为单独的读来处理
-*   考虑是否做聚合？
-*   
-*/
+
 void worker_thread(int queue_seq, rocksdb::DB *db)
 {
     timespec start, end;
@@ -254,10 +238,6 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     // rocksdb.levelstats
     string stats;
     db->GetProperty("rocksdb.levelstats", &stats);
-    mt.lock();
-    // cout << "线程" << queue_seq << "处理请求数" << seq << "个，找到" << found << "/" << total_scan << "个平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * found / atime << "MB/s" << endl;
-    // cout << stats <<endl;
-    mt.unlock();
 }
 
 class vector_merge_iter
@@ -401,7 +381,7 @@ int main(int argc, char *argv[])
 
 // MergingIterator* merge_iter=new MergingIterator(rocksdb::BytewiseComparator(),iters,QUEUE_NUM);
 // merge_iter->SeekToFirst();
-//线程分配
+// thread allocation
 #ifdef MULTITHREAD_SCAN
     for (int i = 0; i < QUEUE_NUM; i++)
     {
@@ -415,7 +395,7 @@ int main(int argc, char *argv[])
         //     scans[i].result[j].resize(100);
         // }
     }
-    //先将请求全部分配
+    //generate workloads
     thread wts[QUEUE_NUM];
     for (int i = 0; i < QUEUE_NUM; i++)
     {
@@ -443,7 +423,7 @@ int main(int argc, char *argv[])
             tail[q_num]++;
         }
 #else
-        //scan迭代器初始化
+        //global iterator init
         rocksdb::Iterator *iters[QUEUE_NUM];
         for (int j = 0; j < QUEUE_NUM; j++)
         {
@@ -481,9 +461,9 @@ int main(int argc, char *argv[])
     uint64_t atime, btime;
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
-    cout << "generating requests：............." << endl;
-    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", throuputs:" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "generating requests:............." << endl;
+    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throuputs:" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg)：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", throuputs:" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM * 100 / btime << "MB/s" << endl;
+    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throuputs:" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM * 100 / btime << "MB/s" << endl;
     return 0;
 }

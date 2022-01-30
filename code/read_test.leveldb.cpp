@@ -30,16 +30,6 @@
 #define SEED 14664
 #define BATCH_SIZE 32
 
-/*
-    请求分配为全内存模式：先分配好trace大小的内存空间，
-                        运行时所有trace载入该内存，
-                        以减少读取trace和创建请求时内存分配的开销。
-                        子线程也只需要读取该内存区。
-    生产者消费者动态模式：主线程为生产者，将trace转换为的请求对象填入预先分配好的内存区。
-                        子线程为消费者，读取对应请求的内存区并执行请求。
-    性能:可以达到裸性能。
-*/
-
 using namespace std;
 using namespace leveldb;
 
@@ -97,10 +87,6 @@ public:
     {
         if (mode_ == UNIQUE_RANDOM)
         {
-            // NOTE: if memory consumption of this approach becomes a concern,
-            // we can either break it into pieces and only random shuffle a section
-            // each time. Alternatively, use a bit map implementation
-            // (https://reviews.facebook.net/differential/diff/54627/)
             values_.resize(num_);
             for (uint64_t i = 0; i < num_; ++i)
             {
@@ -176,7 +162,7 @@ void worker_thread(int queue_seq, leveldb::DB *db)
             keys.push_back(leveldb::Slice(key, key_size_));
         }
 
-        //完成写入
+        // batch write
         if (batch_size)
         {
 #pragma omp parallel for
@@ -213,7 +199,7 @@ void worker_thread(int queue_seq, leveldb::DB *db)
     //     cout<<i<<":"<<batch_size_distribution[i]<<",";
     // }
     // cout << endl<<"avgtime:"<< (int)(total_time/(seq)) <<"ns" << endl;
-    cout << "线程" << queue_seq << "处理请求数" << num << "/" << seq << "个，平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
+    cout << "thread " << queue_seq << " has processed " << num << "/" << seq << " requests, avg latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", Throuputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
     // cout << stats<<endl;
     mt.unlock();
 }
@@ -225,6 +211,7 @@ int main(int argc, char *argv[])
         return 0;
     }
     //db init
+    leveldb::DB* db[QUEUE_NUM];
     const string DBPath = argv[1];
     leveldb::Options options;
     options.compression = leveldb::kNoCompression;
@@ -251,12 +238,12 @@ int main(int argc, char *argv[])
     }
     rocksdb::Random64 *rand = new rocksdb::Random64(SEED);
     KeyGenerator keygen(rand, UNIQUE_RANDOM, TOTAL_NUM);
-    //线程分配
+    //thread allocation
     for (int i = 0; i < QUEUE_NUM; i++)
     {
         tail[i] = 0;
     }
-    //先将请求全部分配
+    //generate workloads
     timespec start, middle, end;
     thread wts[QUEUE_NUM];
     for (int i = 0; i < QUEUE_NUM; i++)
@@ -295,9 +282,9 @@ int main(int argc, char *argv[])
     uint64_t atime, btime;
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
-    cout << "generating requests：............." << endl;
-    cout << "loading time per request (avg)：" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "generating requests:............." << endl;
+    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg)：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
+    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
     return 0;
 }

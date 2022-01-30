@@ -22,15 +22,6 @@
 #define MULTISCAN
 
 #define WRITE_BATCH_SIZE (BATCH_SIZE == 1 ? 1 : (4096 / (key_size_ + value_size_)))
-/*
-    请求分配为全内存模式：先分配好trace大小的内存空间，
-                        运行时所有trace载入该内存，
-                        以减少读取trace和创建请求时内存分配的开销。
-                        子线程也只需要读取该内存区。
-    生产者消费者动态模式：主线程为生产者，将trace转换为的请求对象填入预先分配好的内存区。
-                        子线程为消费者，读取对应请求的内存区并执行请求。
-    性能:可以达到裸性能。
-*/
 
 using namespace std;
 
@@ -100,10 +91,6 @@ public:
     {
         if (mode_ == UNIQUE_RANDOM)
         {
-            // NOTE: if memory consumption of this approach becomes a concern,
-            // we can either break it into pieces and only random shuffle a section
-            // each time. Alternatively, use a bit map implementation
-            // (https://reviews.facebook.net/differential/diff/54627/)
             values_.resize(num_);
             for (uint64_t i = 0; i < num_; ++i)
             {
@@ -179,7 +166,6 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     {
         if (seq >= tail[queue_seq])
         {
-            //没有新请求时如果有writebatch则下刷
             if (batch_size)
             {
                 s = db->Write(writeoptions, &batch);
@@ -234,7 +220,6 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
             break;
         }
         seq++;
-        //如果是写请求,如果有keys先multiget，然后写请求加入writebatch，如果writebatch已满则下刷
         if (request.write)
         {
             GenerateKeyFromInt(request.key, key);
@@ -257,15 +242,11 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
                 batch_size = 0;
             }
         }
-        else //如果是读请求，如果有writebatch则下刷，然后keys加入multiget
+        else 
         {
             GenerateKeyFromInt(request.key, key);
             if (batch_size)
             {
-                // if(....){//如果在batch里能找到，则返回batch中的值（可以减少一些IO，增加一些batch）
-                // continue
-                // }else{
-                //write
                 s = db->Write(writeoptions, &batch);
                 if (s.ok())
                     found += batch_size;
@@ -280,7 +261,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
                 // }
             }
             if (request.scan_size == -1)
-            { //点查询请求
+            { //point query
 #ifdef MULTIGET
                 mutliget_keys.push_back(rocksdb::Slice(key, key_size_));
                 if (mutliget_keys.size() == BATCH_SIZE)
@@ -318,7 +299,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
 #endif
             }
             else
-            { //范围查询请求
+            { //scan
                 // GenerateKeyFromInt(request.key+request.scan_size,scan_end_key);
                 Iterator *iter = db->NewIterator(readoptions);
                 iter->Seek(k);
@@ -337,7 +318,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     string stats;
     db->GetProperty("rocksdb.levelstats", &stats);
     mt.lock();
-    cout << "线程" << queue_seq << "处理请求数" << found << "/" << seq << "个，平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为吞吐率为" << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * found / atime << "MB/s" << endl;
+    cout << "thread " << queue_seq << " has processed " << found << "/" << seq << "requests. Avg latency:" << atime / seq << "ns, QPS=" << 1000000000LL * seq / atime << ", throuputs=" << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * found / atime << "MB/s" << endl;
     cout << stats << endl;
     mt.unlock();
 }
@@ -532,7 +513,7 @@ int main(int argc, char *argv[])
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
     cout << i << " " << ops << " " << total_scan << endl;
-    cout << "loading trace file：............." << endl;
+    cout << "loading trace file:............." << endl;
     cout << "loading time per request (avg):" << atime / i << "ns, QPS:" << 1000000000LL * i / atime << ", throuputs: " << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * ops / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
     cout << "request processing time (avg):" << btime / i << "ns, QPS:" << 1000000000LL * i / btime << ", throuputs: " << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * ops / btime << "MB/s" << endl

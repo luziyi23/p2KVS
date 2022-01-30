@@ -30,15 +30,7 @@
 #define key_size_ 28
 #define SEED 4321
 #define BATCH_SIZE 32
-// #define SEQ_READ
 
-/*
-    读请求
-    point query：分配到请求队列直接查询
-    scan：顺序读负载
-
-    本程序只能处理读请求point query，并且考虑使用multiget减缓压力
-*/
 
 using namespace std;
 
@@ -149,11 +141,7 @@ private:
     uint64_t next_;
     std::vector<uint64_t> values_;
 };
-/*
-*   读请求也作为单独的读来处理
-*   考虑是否做聚合？
-*   
-*/
+
 void worker_thread(int queue_seq, rocksdb::DB *db)
 {
     timespec start, end;
@@ -209,7 +197,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     auto atime = duration_ns(start, end);
 
     mt.lock();
-    cout << "线程" << queue_seq << "处理请求数" << seq << "个，找到" << found << "个平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
+    cout << "Thread " << queue_seq << " has processed " << seq << "requests, find: " << found << ",Avg. latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", Throuputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
     // cout << atime <<endl;
     mt.unlock();
 }
@@ -250,13 +238,13 @@ int main(int argc, char *argv[])
 
     MergingIterator *merge_iter = new MergingIterator(rocksdb::BytewiseComparator(), iters, QUEUE_NUM);
     merge_iter->SeekToFirst();
-    //线程分配
+    // thread allocation
     for (int i = 0; i < QUEUE_NUM; i++)
     {
         tail[i] = 0;
     }
 
-    //先将请求全部分配
+    // generate workloads
     timespec start, middle, end;
     thread wts[QUEUE_NUM];
     for (int i = 0; i < QUEUE_NUM; i++)
@@ -302,9 +290,9 @@ int main(int argc, char *argv[])
     uint64_t atime, btime;
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
-    cout << "generating requests：............." << endl;
-    cout << "loading time per request (avg)：" << atime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "generating requests:............." << endl;
+    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg)：" << btime / READ_NUM << "ns, QPS：" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
+    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
     return 0;
 }

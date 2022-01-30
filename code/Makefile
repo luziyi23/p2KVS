@@ -23,7 +23,7 @@ leveldb:
     write_test_leveldb read_test_leveldb 
 
 install:
-	$(MAKE) -C $(ROCKSDB_DIR) install
+	$(MAKE) -C $(ROCKSDB_DIR) db_bench install 
 
 write_test_default: write_test.cpp
 	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o write_test

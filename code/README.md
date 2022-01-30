@@ -8,16 +8,19 @@ In the sections of motivation and evaluation in our paper, we used some tools fo
    ```
 
 ## RocksDB
-We made some non-invasive changes to the Rocksdb code and integrated its compile installation into the Makefile. Note that the original RocksDB is still available in p2KVS. 
+We made some non-invasive changes to the Rocksdb code and integrated its compile installation into the Makefile. Note that the original RocksDB is still available to run p2KVS. 
    ```
+   cd code
    make install
    ```
+The above instructions install the RocksDB benchmark tool `db_bench` and shared library.
 ## LevelDB
 We did not modify the LevelDB code, so LevelDB is integrated into the project as a submodule.
    ```
    cd leveldb
    cmake .
    make install
+   cd ..
    ```
 
 

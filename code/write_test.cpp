@@ -26,15 +26,6 @@
 #define SEED 14664
 #define BATCH_SIZE 32
 
-/*
-    请求分配为全内存模式：先分配好trace大小的内存空间，
-                        运行时所有trace载入该内存，
-                        以减少读取trace和创建请求时内存分配的开销。
-                        子线程也只需要读取该内存区。
-    生产者消费者动态模式：主线程为生产者，将trace转换为的请求对象填入预先分配好的内存区。
-                        子线程为消费者，读取对应请求的内存区并执行请求。
-    性能:可以达到裸性能。
-*/
 
 using namespace std;
 
@@ -92,10 +83,6 @@ public:
     {
         if (mode_ == UNIQUE_RANDOM)
         {
-            // NOTE: if memory consumption of this approach becomes a concern,
-            // we can either break it into pieces and only random shuffle a section
-            // each time. Alternatively, use a bit map implementation
-            // (https://reviews.facebook.net/differential/diff/54627/)
             values_.resize(num_);
             for (uint64_t i = 0; i < num_; ++i)
             {
@@ -173,7 +160,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
             }
         }
 
-        //完成写入
+        //batch write
         if (batch_size)
         {
             // cout <<"write batch:" << batch_size << endl;
@@ -217,7 +204,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     // }
     // cout << endl<<"avgtime:"<< (int)(total_time/(seq)) <<"ns" << endl;
     // cout << "percentile: 1st:"<< ns[queue_seq][0] <<"ns,50th:"<<  ns[queue_seq][int(0.5*seq)] <<"ns,90th:" << ns[queue_seq][int(0.9*seq)] <<"ns,99th:" <<ns[queue_seq][int(0.99*seq)] << "ns,99.9th:"<<ns[queue_seq][int(0.999*seq)] << "ns,99.99th:" <<ns[queue_seq][int(0.9999*seq)]<<"ns"<<endl;
-    cout << "线程" << queue_seq << "处理请求数" << seq << "个，平均处理时间：" << atime / seq << "ns, QPS：" << 1000000000LL * seq / atime << ", 换算为128BKV的吞吐率为" << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
+    cout << "thread " << queue_seq << " has processed " << seq << " requests. Avg latency: " << atime / seq << "ns, QPS: " << 1000000000LL * seq / atime << ", Throuputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
     // cout << stats<<endl;
     mt.unlock();
 }
@@ -256,12 +243,12 @@ int main(int argc, char *argv[])
 
     rocksdb::Random64 *rand = new rocksdb::Random64(SEED);
     KeyGenerator keygen(rand, SEQUENTIAL, TOTAL_NUM);
-    //线程分配
+    //thread allocation
     for (int i = 0; i < QUEUE_NUM; i++)
     {
         tail[i] = 0;
     }
-    //先将请求全部分配
+    //generate workloads
     timespec start, middle, end;
     thread wts[QUEUE_NUM];
     for (int i = 0; i < QUEUE_NUM; i++)
@@ -303,9 +290,9 @@ int main(int argc, char *argv[])
     btime = duration_ns(start, end);
 
     cout << "loading requests............." << endl;
-    cout << "loading time per request (avg)：" << atime / TOTAL_NUM << "ns, QPS：" << 1000000000LL * TOTAL_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * TOTAL_NUM / atime << "MB/s" << endl;
+    cout << "loading time per request (avg):" << atime / TOTAL_NUM << "ns, QPS:" << 1000000000LL * TOTAL_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * TOTAL_NUM / atime << "MB/s" << endl;
 
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg)：" << btime / TOTAL_NUM << "ns, QPS：" << 1000000000LL * TOTAL_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * TOTAL_NUM / btime << "MB/s" << endl;
+    cout << "request processing time (avg):" << btime / TOTAL_NUM << "ns, QPS:" << 1000000000LL * TOTAL_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * TOTAL_NUM / btime << "MB/s" << endl;
     return 0;
 }
