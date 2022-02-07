@@ -6,9 +6,13 @@ ROCKSDB_FLAG = -lrocksdb -ldl -lzstd -llz4 -lbz2 -lsnappy -lz
 LEVELDB_FLAG = -lleveldb
 OBJECTS = write_test read_test scan_test ycsb
 
+DATANUM?=10000000
+QUEUE_NUM?=8
+READ_NUM?=1000000
 TOTAL_NUM=${DATANUM}
 QUEUE_NUM=${INSTNUM}
 READ_NUM=${READNUM}
+
 
 .PHONY : clean rocksdb
 
@@ -17,13 +21,11 @@ all: install rocksdb
 
 rocksdb: write_test read_test scan_test ycsb
 	
-	
 
-leveldb:
-    write_test_leveldb read_test_leveldb 
+leveldb: write_test_leveldb read_test_leveldb 
 
 install:
-	$(MAKE) -C $(ROCKSDB_DIR) db_bench install 
+	$(MAKE) -C $(ROCKSDB_DIR) db_bench install
 
 write_test_default: write_test.cpp
 	$(CXX) $^ $(CXXFLAGS) $(ROCKSDB_FLAG) -o write_test

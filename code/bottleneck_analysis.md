@@ -14,12 +14,20 @@ sudo apt-get install linux-cloud-tools-generic
 
 3. For data visualization, we use the FlameGraph tool to show the latency breakdown. FlameGraph is already available as a submodule of this repository.
 
+4. Python3 is needed to run the scripts.
+
 ## Run testing
-
-1. Run test script
+1. Input the SSD directory
 ```
-cd code/scripts
-
+cd scripts
+vim perf.py
+# Assign db_dir with an SSD directory
 ```
 
-2. 
+2. Run test script
+```
+python perf.py
+```
+
+3. See throuputs and latencies in `test_result.txt`.
+See flame graphs of latency breakdown in `perf_[#threads].svg`.

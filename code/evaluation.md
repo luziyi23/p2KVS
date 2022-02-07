@@ -1,25 +1,4 @@
 # Evaluate p2KVS
-We use YCSB benchmarks to generate trace files. The p2KVS prototype can load the trace files and process the operations in the traces. Note that the codes of YCSB has been modified to generate  trace files that conform to a certain format.
-
-Here is the process for generating trace using the modified YCSB:
-1. Build ycsb
-
-   ```sh
-   mvn -pl site.ycsb:core -am package -DskipTests dependency:build-classpath -DincludeScope=compile -Dmdep.outputFilterFile=true
-   ```
-
-2. Generate trace file with certain workload properties. The properties can be changed by modifying the configurations file in workloads directory.
-   ```sh
-   bin/ycsb load basic -P workloads/workloada -trace loada -p "fieldcount=1"
-   #workloada is the configuration file of trace properties.
-   # loada is the prefix of trace file name.
-   ```
-3. Generate traces of a multi-threaded workloads by adding the thread parameter (used to test the performance of a single instance under multiple threads).
-   ```sh
-    bin/ycsb load basic -P workloads/workloada -trace loada -p "fieldcount=1" -p "threadcount=4"
-   ```
-
-# Testing RocksDB with p2KVS
 We made scripts for four test cases, including write tests, read tests, scan tests, and YCSB tests. The first three tests generate a fixed number of requests that are then executed on the Rocksdb instance via p2KVS. The YCSB test loads the request recorded in the trace file into memory and then executes on p2KVS. 
 
 Before performing the read and scan tests, you need to load a certain number of datasets through the write test. Each YCSB test are often done in two steps by running the trace that loads the dataset and the trace that actually executes workloads.
@@ -50,10 +29,30 @@ The number of instances (INSTNUM) in p2KVS and the size of dataset (DATANUM) can
    Note that the number of instances when testing the same DB must be the same (the number of requests can vary).
 
 ## ycsb
-We have recorded the configurations used in our YCSB experiments in the file "defines.h", which can be invoked using definitions.
-Here is the explanations of the definitions.
+### Trace genration
+We use YCSB benchmarks to generate trace files. The p2KVS prototype can load the trace files and process the operations in the traces. Note that the codes of YCSB has been modified to generate  trace files that conform to a certain format.
+
+Here is the process for generating trace using the modified YCSB:
+1. Build ycsb
+
+   ```sh
+   mvn -pl site.ycsb:core -am package -DskipTests dependency:build-classpath -DincludeScope=compile -Dmdep.outputFilterFile=true
+   ```
+
+2. Generate trace file with certain workload properties. The properties can be changed by modifying the configurations file in workloads directory.
+   ```sh
+   bin/ycsb load basic -P workloads/workloada -trace loada -p "fieldcount=1"
+   #workloada is the configuration file of trace properties.
+   # loada is the prefix of trace file name.
+   ```
+3. Generate traces of a multi-threaded workloads by adding the thread parameter (used to test the performance of a single instance under multiple threads).
+   ```sh
+    bin/ycsb load basic -P workloads/workloada -trace loada -p "fieldcount=1" -p "threadcount=4"
+   ```
 
 ### Benchmarks. 
+We have recorded the configurations used in our YCSB experiments in the file "defines.h", which can be invoked using definitions.
+Here is the explanations of the definitions.
 
 The macro is in format {NAME}_{BENCHMARK} (e.g. YCSB_RUN, SPLINTER_LOAD).
 
