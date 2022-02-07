@@ -4378,18 +4378,18 @@ class Benchmark {
 
   void DoWrite(ThreadState* thread, WriteMode write_mode) {
     // int cpus = 0;
-    cpu_set_t mask;
+    // cpu_set_t mask;
     // cpu_set_t get;
 
 
-    CPU_ZERO(&mask);    /* 初始化set集，将set置为空*/
-    CPU_SET(0, &mask);  /* 依次将0、1、2、3号cpu加入到集合，前提是你的机器是多核处理器*/
+    // CPU_ZERO(&mask);    /* 初始化set集，将set置为空*/
+    // CPU_SET(0, &mask);  /* 依次将0、1、2、3号cpu加入到集合，前提是你的机器是多核处理器*/
     
-    /*设置cpu 亲和性（affinity）*/
-    if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
-        printf("Set CPU affinity failue, ERROR:%s\n", strerror(errno));
-        return; 
-    }   
+    // /*设置cpu 亲和性（affinity）*/
+    // if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
+    //     printf("Set CPU affinity failue, ERROR:%s\n", strerror(errno));
+    //     return; 
+    // }   
     const int test_duration = write_mode == RANDOM ? FLAGS_duration : 0;
     const int64_t num_ops = writes_ == 0 ? num_ : writes_;
 
