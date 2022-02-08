@@ -197,7 +197,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     auto atime = duration_ns(start, end);
 
     mt.lock();
-    cout << "Thread " << queue_seq << " has processed " << seq << "requests, find: " << found << ",Avg. latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", Throuputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
+    cout << "Thread " << queue_seq << " has processed " << seq << "requests, find: " << found << ",Avg. latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", throughputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
     // cout << atime <<endl;
     mt.unlock();
 }
@@ -291,8 +291,8 @@ int main(int argc, char *argv[])
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
     cout << "generating requests:............." << endl;
-    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throughputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
+    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throughputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
     return 0;
 }

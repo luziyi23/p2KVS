@@ -318,7 +318,7 @@ void worker_thread(int queue_seq, rocksdb::DB *db)
     string stats;
     db->GetProperty("rocksdb.levelstats", &stats);
     mt.lock();
-    cout << "thread " << queue_seq << " has processed " << found << "/" << seq << "requests. Avg latency:" << atime / seq << "ns, QPS=" << 1000000000LL * seq / atime << ", throuputs=" << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * found / atime << "MB/s" << endl;
+    cout << "thread " << queue_seq << " has processed " << found << "/" << seq << "requests. Avg latency:" << atime / seq << "ns, QPS=" << 1000000000LL * seq / atime << ", throughputs=" << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * found / atime << "MB/s" << endl;
     cout << stats << endl;
     mt.unlock();
 }
@@ -514,9 +514,9 @@ int main(int argc, char *argv[])
     btime = duration_ns(start, end);
     cout << i << " " << ops << " " << total_scan << endl;
     cout << "loading trace file:............." << endl;
-    cout << "loading time per request (avg):" << atime / i << "ns, QPS:" << 1000000000LL * i / atime << ", throuputs: " << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * ops / atime << "MB/s" << endl;
+    cout << "loading time per request (avg):" << atime / i << "ns, QPS:" << 1000000000LL * i / atime << ", throughputs: " << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * ops / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg):" << btime / i << "ns, QPS:" << 1000000000LL * i / btime << ", throuputs: " << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * ops / btime << "MB/s" << endl
+    cout << "request processing time (avg):" << btime / i << "ns, QPS:" << 1000000000LL * i / btime << ", throughputs: " << 1000000000LL * (key_size_ + value_size_) / 1024 / 1024 * ops / btime << "MB/s" << endl
          << endl;
     if (destroydb)
     {

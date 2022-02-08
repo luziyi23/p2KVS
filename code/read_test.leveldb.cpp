@@ -199,7 +199,7 @@ void worker_thread(int queue_seq, leveldb::DB *db)
     //     cout<<i<<":"<<batch_size_distribution[i]<<",";
     // }
     // cout << endl<<"avgtime:"<< (int)(total_time/(seq)) <<"ns" << endl;
-    cout << "thread " << queue_seq << " has processed " << num << "/" << seq << " requests, avg latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", Throuputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
+    cout << "thread " << queue_seq << " has processed " << num << "/" << seq << " requests, avg latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", throughputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
     // cout << stats<<endl;
     mt.unlock();
 }
@@ -283,8 +283,8 @@ int main(int argc, char *argv[])
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
     cout << "generating requests:............." << endl;
-    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throughputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throuputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
+    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throughputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
     return 0;
 }

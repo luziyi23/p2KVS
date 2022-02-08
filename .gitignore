@@ -35,4 +35,5 @@
 *_test
 ycsb
 write_test_wiredtiger.cpp
+write_test_w.cpp
 /.vscode/

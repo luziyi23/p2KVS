@@ -29,5 +29,5 @@ vim perf.py
 python perf.py
 ```
 
-3. See throuputs and latencies in `test_result.txt`.
+3. See throughputs and latencies in `test_result.txt`.
 See flame graphs of latency breakdown in `perf_[#threads].svg`.
