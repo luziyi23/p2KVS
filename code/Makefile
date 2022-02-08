@@ -7,8 +7,8 @@ LEVELDB_FLAG = -lleveldb
 OBJECTS = write_test read_test scan_test ycsb
 
 DATANUM?=10000000
-QUEUE_NUM?=8
-READ_NUM?=1000000
+INSTNUM?=8
+READNUM?=1000000
 TOTAL_NUM=${DATANUM}
 QUEUE_NUM=${INSTNUM}
 READ_NUM=${READNUM}
@@ -54,6 +54,9 @@ write_test_leveldb: write_test_leveldb.cpp
 	
 read_test_leveldb: read_test_leveldb.cpp
 	g++ $^  -mcmodel=medium --std=c++14 -lleveldb -lpthread -fopenmp -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM)  -DREAD_NUM=${READ_NUM}
+
+write_test_wt: write_test_w.cpp
+	g++ $^ --std=c++14 -lpthread -lwiredtiger -fopenmp -o $@ -DTOTAL_NUM=$(TOTAL_NUM) -DQUEUE_NUM=$(QUEUE_NUM)  -DREAD_NUM=${READ_NUM}
 
 
 clean_rocksdb:
