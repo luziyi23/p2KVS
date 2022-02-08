@@ -365,7 +365,7 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < QUEUE_NUM; i++)
     {
-        char c[3];
+        char c[16];
         std::sprintf(c, "%03d", i);
         rocksdb::Status status = rocksdb::DB::Open(options, DBPath + c, &db[i]);
         assert(status.ok());

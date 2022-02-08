@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
         // 10));
     for(int i=0;i<QUEUE_NUM;i++){
 
-      char c[3];
+      char c[16];
       std::sprintf(c,"%03d",i);
       leveldb::DestroyDB(DBPath+c,options);
       leveldb::Status status = leveldb::DB::Open(options,DBPath+c, &db[i]);
