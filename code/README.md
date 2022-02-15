@@ -18,6 +18,7 @@ The above instructions install the RocksDB benchmark tool `db_bench` and shared 
 We did not modify the LevelDB code, so LevelDB is integrated into the project as a submodule.
    ```
    cd leveldb
+   git submodule update --init --recursive
    cmake .
    make install
    cd ..

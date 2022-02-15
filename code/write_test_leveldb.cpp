@@ -226,7 +226,7 @@ int main(int argc, char *argv[])
     timespec start,middle,end;
     thread wts[QUEUE_NUM];
     for(int i=0;i<QUEUE_NUM;i++){
-        wts[i]= thread(worker_thread,i,db[0]);
+        wts[i]= thread(worker_thread,i,db[i]);
     }
     clock_gettime(CLOCK_REALTIME,&start);
     for(int i=0;i<TOTAL_NUM;i++){

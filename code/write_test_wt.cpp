@@ -7,37 +7,30 @@
 #include <mutex>
 #include <atomic>
 #include <cstring>
-#include <leveldb/slice.h>
-#include <leveldb/db.h>
-#include <leveldb/options.h>
-#include <leveldb/write_batch.h>
-#include <leveldb/table.h>
-#include <leveldb/filter_policy.h>
-#include <omp.h>
+#include <algorithm>
+#include <wiredtiger.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "random.h"
-
 #ifndef TOTAL_NUM
-#define TOTAL_NUM 320000000LL
+#define TOTAL_NUM 10000000LL
 #endif
-#ifndef READ_NUM
-#define READ_NUM 10000000LL
-#endif
-#define EXPAND_QUEUE_SIZE READ_NUM / 10 + 1
+#define EXPAND_QUEUE_SIZE TOTAL_NUM / 10 + 1
+
 #ifndef QUEUE_NUM
 #define QUEUE_NUM 8
 #endif
 #define key_size_ 28
 #define SEED 14664
-#define BATCH_SIZE 32
+#define BATCH_SIZE 1
+
 
 using namespace std;
-using namespace leveldb;
 
 struct async_requests
 {
     int seq;
     int key;
-    unsigned long ns;
     int batch_pos;
     timespec start;
     async_requests(int s, int k) : seq(s), key(k)
@@ -49,7 +42,8 @@ struct async_requests
 };
 mutex mt;
 int tail[QUEUE_NUM];
-async_requests qs[QUEUE_NUM][READ_NUM / QUEUE_NUM + EXPAND_QUEUE_SIZE];
+async_requests qs[QUEUE_NUM][TOTAL_NUM / QUEUE_NUM + EXPAND_QUEUE_SIZE];
+int ns[QUEUE_NUM][TOTAL_NUM / QUEUE_NUM];
 
 long duration_ns(timespec start, timespec end)
 {
@@ -121,25 +115,18 @@ private:
     std::vector<uint64_t> values_;
 };
 
-void worker_thread(int queue_seq, leveldb::DB *db)
+void worker_thread(int queue_seq, WT_CURSOR *cursor)
 {
-
-    leveldb::Slice value;
     char *value_str = new char[100];
     memset(value_str, '0', 100);
-    value = leveldb::Slice(value_str, 100);
+    value_str[99]='\0';
     timespec start, end;
-    char key[key_size_];
-    leveldb::Slice k(key, key_size_);
-    std::string getvalue;
-    int num = 0;
+    char key[key_size_+1];
     int seq = 0;
     bool endflag = 0;
     int batch_size = 0;
-    int t;
-    auto writeoptions = leveldb::WriteOptions();
-    vector<leveldb::Slice> keys;
-    leveldb::Status s;
+    int t,ret;
+
     clock_gettime(CLOCK_REALTIME, &start);
     while (!endflag)
     {
@@ -147,9 +134,9 @@ void worker_thread(int queue_seq, leveldb::DB *db)
         if (seq >= t)
         {
             this_thread::yield();
-            //   this_thread::sleep_for(chrono::nanoseconds(100));
+            //   this_thread::sleep_for(chrono::microseconds(1));
+            continue;
         }
-        WriteBatch batch;
         for (batch_size = 0; seq < t && batch_size < BATCH_SIZE; seq++, batch_size++)
         {
             if (qs[queue_seq][seq].seq == -1)
@@ -157,49 +144,43 @@ void worker_thread(int queue_seq, leveldb::DB *db)
                 endflag = true;
                 break;
             }
-            GenerateKeyFromInt(qs[queue_seq][seq].key, key);
+            // GenerateKeyFromInt(qs[queue_seq][seq].key, key);
+            sprintf(key,"%028d",qs[queue_seq][seq].key);
             // clock_gettime(CLOCK_REALTIME,&(qs[queue_seq][seq].start));
-            keys.push_back(leveldb::Slice(key, key_size_));
-        }
-
-        // batch write
-        if (batch_size)
-        {
-#pragma omp parallel for
-            for (int i = 0; i < batch_size; i++)
+            cursor->set_key(cursor, key); /* Insert a record. */
+            cursor->set_value(cursor, value_str);
+            ret = cursor->insert(cursor);
+            if (ret)
             {
-                std::string getvalue;
-                leveldb::Status s = db->Get(ReadOptions(), keys[i], &getvalue);
-                if (s.ok())
-                {
-                    num++;
-                }
+                cout << "error\n" << endl;
             }
-            keys.clear();
         }
     }
     clock_gettime(CLOCK_REALTIME, &end);
     auto atime = duration_ns(start, end);
-    string stats;
-    db->GetProperty("level.levelstats", &stats);
+    int batch_size_distribution[BATCH_SIZE];
+    double total_time = 0;
+    for (int i = 0; i < BATCH_SIZE; i++)
+    {
+        batch_size_distribution[i] = 0;
+    }
+    for (int i = 0; i < seq; i++)
+    {
+        // cout << "batch_pos:"<< qs[queue_seq][i].batch_pos <<" ,"<< (int)ns[i] <<"ns"<<endl;
+        int batchpos = qs[queue_seq][i].batch_pos;
+        // if(batchpos==32)cout <<"32positon: "<<i<<endl;
+        batch_size_distribution[batchpos - 1]++;
+        total_time += ns[queue_seq][i];
+    }
+    sort(ns[queue_seq], ns[queue_seq] + seq);
     mt.lock();
-    // cout <<"thread " << queue_seq<<endl;
-    // int batch_size_distribution[BATCH_SIZE];
-    // double total_time=0;
+    // cout <<endl<<"thread " << queue_seq <<"result"<<endl;
     // for(int i=0;i<BATCH_SIZE;i++){
-    //     batch_size_distribution[i]=0;
-    // }
-    // for(int i=0;i<seq;i++){
-    //     // cout << "batch_pos:"<< qs[queue_seq][i].batch_pos <<" ,"<< (int)qs[queue_seq][i].ns <<"ns"<<endl;
-    //     int batchpos=qs[queue_seq][i].batch_pos;
-    //     batch_size_distribution[batchpos-1]++;
-    //     total_time+=qs[queue_seq][i].ns;
-    // }
-    // for(int i=0;i<BATCH_SIZE;i++){
-    //     cout<<i<<":"<<batch_size_distribution[i]<<",";
+    //     cout<<i+1<<":"<<batch_size_distribution[i]<<",";
     // }
     // cout << endl<<"avgtime:"<< (int)(total_time/(seq)) <<"ns" << endl;
-    cout << "thread " << queue_seq << " has processed " << num << "/" << seq << " requests, avg latency: " << atime / seq << "ns, QPS:" << 1000000000LL * seq / atime << ", throughputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
+    // cout << "percentile: 1st:"<< ns[queue_seq][0] <<"ns,50th:"<<  ns[queue_seq][int(0.5*seq)] <<"ns,90th:" << ns[queue_seq][int(0.9*seq)] <<"ns,99th:" <<ns[queue_seq][int(0.99*seq)] << "ns,99.9th:"<<ns[queue_seq][int(0.999*seq)] << "ns,99.99th:" <<ns[queue_seq][int(0.9999*seq)]<<"ns"<<endl;
+    cout << "thread " << queue_seq << " has processed " << seq << " requests. Avg latency: " << atime / seq << "ns, QPS: " << 1000000000LL * seq / atime << ", throughputs: " << 1000000000LL * 128 / 1024 / 1024 * seq / atime << "MB/s" << endl;
     // cout << stats<<endl;
     mt.unlock();
 }
@@ -207,37 +188,31 @@ int main(int argc, char *argv[])
 {
     if (argc != 2)
     {
-        printf("please enter the directory of db_path as paramater \n(e.g.: read_test_leveldb /mnt/optanessd/db)");
+        printf("please enter the directory of db_path as paramater \n(e.g.: read_test /mnt/optanessd/db)");
         return 0;
     }
     //db init
-    leveldb::DB* db[QUEUE_NUM];
     const string DBPath = argv[1];
-    leveldb::Options options;
-    options.compression = leveldb::kNoCompression;
-    options.create_if_missing = true;
-    // options.use_direct_io_for_flush_and_compaction=true;
-    // options.use_direct_reads=false;
-    // options.enable_pipelined_write=false;
-    // options.allow_concurrent_memtable_write=false;
-    // options.max_background_jobs=40;
-    // options.wal_bytes_per_sync=4*1048576;
-    // leveldb::BlockBasedTableOptions* table_options =
-    //       reinterpret_cast<leveldb::BlockBasedTableOptions*>(
-    //           options.table_factory->GetOptions());
-    // table_options->filter_policy.reset(leveldb::NewBloomFilterPolicy(
-    // 10));
+    WT_CONNECTION *db[QUEUE_NUM];
+    WT_SESSION *session[QUEUE_NUM];
+    WT_CURSOR *cursor[QUEUE_NUM];
     for (int i = 0; i < QUEUE_NUM; i++)
     {
-
         char c[16];
         std::sprintf(c, "%03d", i);
-        //   leveldb::DestroyDB(DBPath+c,options);
-        leveldb::Status status = leveldb::DB::Open(options, DBPath + c, &db[i]);
-        assert(status.ok());
+        if(0 != access((DBPath + c).c_str(),0)){
+            mkdir((DBPath + c).c_str(),0755);
+        }
+        wiredtiger_open((DBPath + c).c_str(), NULL, "create", &db[i]);//open gai
+    
+        db[i]->open_session(db[i], NULL, NULL, &session[i]);
+        session[i]->create(session[i], "table:access", "key_format=S,value_format=S");
+        session[i]->open_cursor(session[i], "table:access", NULL, NULL, &cursor[i]);
     }
+
+    //rng
     rocksdb::Random64 *rand = new rocksdb::Random64(SEED);
-    KeyGenerator keygen(rand, UNIQUE_RANDOM, TOTAL_NUM);
+    KeyGenerator keygen(rand, SEQUENTIAL, TOTAL_NUM);
     //thread allocation
     for (int i = 0; i < QUEUE_NUM; i++)
     {
@@ -248,21 +223,17 @@ int main(int argc, char *argv[])
     thread wts[QUEUE_NUM];
     for (int i = 0; i < QUEUE_NUM; i++)
     {
-        wts[i] = thread(worker_thread, i, db[i]);
+        wts[i] = thread(worker_thread, i, cursor[i]);
     }
     clock_gettime(CLOCK_REALTIME, &start);
-    for (int i = 0; i < READ_NUM; i++)
+    for (int i = 0; i < TOTAL_NUM; i++)
     {
         uint64_t key = keygen.Next();
         int q_num = key % QUEUE_NUM;
         qs[q_num][tail[q_num]].seq = i;
         qs[q_num][tail[q_num]].key = key;
-        // clock_gettime(CLOCK_REALTIME,&qs[q_num][tail[q_num]].start);
+        clock_gettime(CLOCK_REALTIME, &qs[q_num][tail[q_num]].start);
         tail[q_num]++;
-        // for(int j=0;j<100;j++)
-        // {
-
-        // }
     }
     for (int i = 0; i < QUEUE_NUM; i++)
     {
@@ -271,20 +242,24 @@ int main(int argc, char *argv[])
         tail[i]++;
     }
     clock_gettime(CLOCK_REALTIME, &middle);
+    cout << "finish" << endl;
     for (int j = 0; j < QUEUE_NUM; j++)
     {
         wts[j].join();
     }
     clock_gettime(CLOCK_REALTIME, &end);
-    // for(int j=0;j<QUEUE_NUM;j++){
-    //     db[j]->Close();
-    // }
+    for (int j = 0; j < QUEUE_NUM; j++)
+    {
+        db[j]->close(db[j],NULL);//close gai
+    }
     uint64_t atime, btime;
     atime = duration_ns(start, middle);
     btime = duration_ns(start, end);
-    cout << "generating requests:............." << endl;
-    cout << "loading time per request (avg):" << atime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / atime << ", throughputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / atime << "MB/s" << endl;
+
+    cout << "loading requests............." << endl;
+    cout << "loading time per request (avg):" << atime / TOTAL_NUM << "ns, QPS:" << 1000000000LL * TOTAL_NUM / atime << ", throughputs:" << 1000000000LL * 128 / 1024 / 1024 * TOTAL_NUM / atime << "MB/s" << endl;
+
     cout << "processing requests:............" << endl;
-    cout << "request processing time (avg):" << btime / READ_NUM << "ns, QPS:" << 1000000000LL * READ_NUM / btime << ", throughputs" << 1000000000LL * 128 / 1024 / 1024 * READ_NUM / btime << "MB/s" << endl;
+    cout << "total time (avg):" << btime / TOTAL_NUM << "ns, QPS:" << 1000000000LL * TOTAL_NUM / btime << ", throughputs:" << 1000000000LL * 128 / 1024 / 1024 * TOTAL_NUM / btime << "MB/s" << endl;
     return 0;
 }
